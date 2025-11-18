@@ -982,6 +982,7 @@ func (s *Server) checkpoint(request *restful.Request, response *restful.Response
 	}
 
 	options := &runtimeapi.CheckpointContainerRequest{}
+	options.LeaveStopped = true
 	// Query parameter to select an optional timeout. Without the timeout parameter
 	// the checkpoint command will use the default CRI timeout.
 	timeouts := request.Request.URL.Query()["timeout"]
