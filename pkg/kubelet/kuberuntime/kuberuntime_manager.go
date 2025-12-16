@@ -818,6 +818,11 @@ func (m *kubeGenericRuntimeManager) updatePodContainerResources(pod *v1.Pod, res
 func (m *kubeGenericRuntimeManager) computePodActions(ctx context.Context, pod *v1.Pod, podStatus *kubecontainer.PodStatus) podActions {
 	klog.V(5).InfoS("Syncing Pod", "pod", klog.KObj(pod))
 
+	isRestartFrozen := pod.Annotations != nil && pod.Annotations["migration.my.domain/freeze-restart"] == "true"
+	if isRestartFrozen {
+		klog.InfoS("Pod is frozen for migration, blocking restart actions", "pod", klog.KObj(pod))
+	}
+
 	createPodSandbox, attempt, sandboxID := runtimeutil.PodSandboxChanged(pod, podStatus)
 	changes := podActions{
 		KillPod:           createPodSandbox,
@@ -848,13 +853,14 @@ func (m *kubeGenericRuntimeManager) computePodActions(ctx context.Context, pod *
 
 		// Get the containers to start, excluding the ones that succeeded if RestartPolicy is OnFailure.
 		var containersToStart []int
-		for idx, c := range pod.Spec.Containers {
-			if pod.Spec.RestartPolicy == v1.RestartPolicyOnFailure && containerSucceeded(&c, podStatus) {
-				continue
+		if !isRestartFrozen {
+			for idx, c := range pod.Spec.Containers {
+				if pod.Spec.RestartPolicy == v1.RestartPolicyOnFailure && containerSucceeded(&c, podStatus) {
+					continue
+				}
+				containersToStart = append(containersToStart, idx)
 			}
-			containersToStart = append(containersToStart, idx)
 		}
-
 		// We should not create a sandbox, and just kill the pod if initialization
 		// is done and there is no container to start.
 		if len(containersToStart) == 0 {
@@ -961,7 +967,7 @@ func (m *kubeGenericRuntimeManager) computePodActions(ctx context.Context, pod *
 		// If container does not exist, or is not running, check whether we
 		// need to restart it.
 		if containerStatus == nil || containerStatus.State != kubecontainer.ContainerStateRunning {
-			if kubecontainer.ShouldContainerBeRestarted(&container, pod, podStatus) {
+			if !isRestartFrozen && kubecontainer.ShouldContainerBeRestarted(&container, pod, podStatus) {
 				klog.V(3).InfoS("Container of pod is not in the desired state and shall be started", "containerName", container.Name, "pod", klog.KObj(pod))
 				changes.ContainersToStart = append(changes.ContainersToStart, idx)
 				if containerStatus != nil && containerStatus.State == kubecontainer.ContainerStateUnknown {
@@ -1013,7 +1019,9 @@ func (m *kubeGenericRuntimeManager) computePodActions(ctx context.Context, pod *
 		// not kill the entire pod since we expect container to be running eventually.
 		if restart {
 			message = fmt.Sprintf("%s, will be restarted", message)
-			changes.ContainersToStart = append(changes.ContainersToStart, idx)
+			if !isRestartFrozen {
+				changes.ContainersToStart = append(changes.ContainersToStart, idx)
+			}
 		}
 
 		changes.ContainersToKill[containerStatus.ID] = containerToKillInfo{
