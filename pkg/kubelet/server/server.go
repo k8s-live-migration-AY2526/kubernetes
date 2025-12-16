@@ -988,7 +988,7 @@ func (s *Server) checkpoint(request *restful.Request, response *restful.Response
 	}
 
 	options := &runtimeapi.CheckpointContainerRequest{}
-	// KOOYUCONG: Default to false, unless user explicitly requested
+	// Default to false, unless user explicitly requested
 	options.LeaveStopped = false
 	leaveStoppedParams := request.Request.URL.Query()["leaveStopped"]
 	if len(leaveStoppedParams) > 0 {
