@@ -945,6 +945,7 @@ func (s *Server) checkpoint(request *restful.Request, response *restful.Response
 		"path", request.Request.URL.Path,
 		"query", request.Request.URL.Query().Encode(),
 		"leaveStoppedParam", request.Request.URL.Query()["leaveStopped"],
+		"tcpEstablishedParam", request.Request.URL.Query()["tcpEstablished"],
 	)
 
 	ctx := request.Request.Context()
@@ -1002,6 +1003,20 @@ func (s *Server) checkpoint(request *restful.Request, response *restful.Response
 			return
 		}
 		options.LeaveStopped = leaveStopped
+	}
+
+	tcpEstablishedParam := request.Request.URL.Query()["tcpEstablished"]
+	if len(tcpEstablishedParam) > 0 {
+		// Use the last value provided if multiple are present
+		tcpEstablished, err := strconv.ParseBool(tcpEstablishedParam[len(tcpEstablishedParam)-1])
+		if err != nil {
+			response.WriteError(
+				http.StatusBadRequest,
+				fmt.Errorf("argument tcpEstablished invalid: %v", err),
+			)
+			return
+		}
+		options.TcpEstablished = tcpEstablished
 	}
 
 	// Query parameter to select an optional timeout. Without the timeout parameter
