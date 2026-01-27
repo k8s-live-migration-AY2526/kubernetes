@@ -941,6 +941,13 @@ func (s *Server) getPortForward(request *restful.Request, response *restful.Resp
 // podNamespace, pod and container actually exist and only then calls out
 // to the runtime to actually checkpoint the container.
 func (s *Server) checkpoint(request *restful.Request, response *restful.Response) {
+	klog.InfoS("DEBUG: Checkpoint request received",
+		"path", request.Request.URL.Path,
+		"query", request.Request.URL.Query().Encode(),
+		"leaveStoppedParam", request.Request.URL.Query()["leaveStopped"],
+		"tcpEstablishedParam", request.Request.URL.Query()["tcpEstablished"],
+	)
+
 	ctx := request.Request.Context()
 	pod, ok := s.host.GetPodByName(request.PathParameter("podNamespace"), request.PathParameter("podID"))
 	if !ok {
@@ -982,6 +989,36 @@ func (s *Server) checkpoint(request *restful.Request, response *restful.Response
 	}
 
 	options := &runtimeapi.CheckpointContainerRequest{}
+	// Default to false, unless user explicitly requested
+	options.LeaveStopped = false
+	leaveStoppedParams := request.Request.URL.Query()["leaveStopped"]
+	if len(leaveStoppedParams) > 0 {
+		// Use the last value provided if multiple are present
+		leaveStopped, err := strconv.ParseBool(leaveStoppedParams[len(leaveStoppedParams)-1])
+		if err != nil {
+			response.WriteError(
+				http.StatusBadRequest,
+				fmt.Errorf("argument leaveStopped invalid: %v", err),
+			)
+			return
+		}
+		options.LeaveStopped = leaveStopped
+	}
+
+	tcpEstablishedParam := request.Request.URL.Query()["tcpEstablished"]
+	if len(tcpEstablishedParam) > 0 {
+		// Use the last value provided if multiple are present
+		tcpEstablished, err := strconv.ParseBool(tcpEstablishedParam[len(tcpEstablishedParam)-1])
+		if err != nil {
+			response.WriteError(
+				http.StatusBadRequest,
+				fmt.Errorf("argument tcpEstablished invalid: %v", err),
+			)
+			return
+		}
+		options.TcpEstablished = tcpEstablished
+	}
+
 	// Query parameter to select an optional timeout. Without the timeout parameter
 	// the checkpoint command will use the default CRI timeout.
 	timeouts := request.Request.URL.Query()["timeout"]
